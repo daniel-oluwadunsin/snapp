@@ -1,9 +1,19 @@
 {
   "project": {
     "name": "Snapp",
+    "platforms": {
+      "ios": true,
+      "android": true
+    },
     "bundleId": {
       "ios": "com.danieloluwadunsin.snapp",
       "android": "com.danieloluwadunsin.snapp"
+    },
+    "commands": {
+      "run": {
+        "ios": "flutter run -d ios",
+        "android": "flutter run -d android"
+      }
     }
   },
 
@@ -54,8 +64,6 @@
     "dir": "./screenshots",
     "format": "png",
     "structure": {
-      "ios": true,
-      "android": true,
       "groupByDevice": true,
       "groupByScreen": true
     }

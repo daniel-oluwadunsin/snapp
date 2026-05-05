@@ -1,20 +1,41 @@
+import boxen from "boxen";
 import chalk from "chalk";
+import figlet from "figlet";
 
 export class SnappLogger {
-  info(message: string) {
-    console.log(chalk.blue("[INFO]"), message);
+  info(...messages: any[]) {
+    console.log(chalk.blue("[INFO]"), ...messages);
   }
 
-  error(message: string) {
-    console.log(chalk.red("[ERROR]"), message);
+  error(...messages: any[]) {
+    console.log(chalk.red("[ERROR]"), ...messages);
   }
 
-  warn(message: string) {
-    console.log(chalk.yellow("[WARN]"), message);
+  warn(...messages: any[]) {
+    console.log(chalk.yellow("[WARN]"), ...messages);
   }
 
-  success(message: string) {
-    console.log(chalk.green("[SUCCESS]"), message);
+  success(...messages: any[]) {
+    console.log(chalk.green("[SUCCESS]"), ...messages);
+  }
+
+  log(...messages: any[]) {
+    console.log(...messages);
+  }
+
+  logBrand() {
+    const brand = boxen(
+      figlet.textSync("Snapp </>", {
+        horizontalLayout: "full",
+      }),
+      {
+        padding: 1,
+        borderColor: "green",
+        borderStyle: "doubleSingle",
+      },
+    );
+
+    console.log(chalk.green(brand));
   }
 }
 

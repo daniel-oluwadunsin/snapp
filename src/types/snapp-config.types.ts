@@ -1,51 +1,55 @@
 type Project = {
-  name: string;
-  bundleId: {
-    android: string;
-    ios: string;
+  name?: string;
+  platforms?: {
+    ios: boolean;
+    android: boolean;
   };
+  bundleId?: string | BundleId;
+};
+
+export type BundleId = {
+  ios: string;
+  android: string;
 };
 
 type RunTime = {
-  timeoutMs: number;
-  delayAfterLaunchMs: number;
+  timeoutMs?: number;
+  delayAfterLaunchMs?: number;
 };
 
 type DeepLink = {
-  scheme: string;
-  prefix: string;
-  android: {
-    host: string;
-    pathPrefix: string;
+  scheme?: string;
+  prefix?: string;
+  android?: {
+    host?: string;
+    pathPrefix?: string;
   };
-  ios: {
-    host: string;
-    pathPrefix: string;
+  ios?: {
+    host?: string;
+    pathPrefix?: string;
   };
 };
 
 type DelayElement = "text" | "timeout";
 
 type Screen = {
-  name: string;
-  url: string;
-  waitFor: {
-    type: DelayElement;
-    value: string | number;
+  name?: string;
+  url?: string;
+  waitFor?: {
+    type?: DelayElement;
+    value?: string | number;
   };
-  screenshot: {
-    fileName: string;
+  screenshot?: {
+    fileName?: string;
   };
 };
 
 type Output = {
-  dir: string;
-  format: string;
-  structure: {
-    ios: boolean;
-    android: boolean;
-    groupByDevice: boolean;
-    groupByScreen: boolean;
+  dir?: string;
+  format?: string;
+  structure?: {
+    groupByDevice?: boolean;
+    groupByScreen?: boolean;
   };
 };
 
