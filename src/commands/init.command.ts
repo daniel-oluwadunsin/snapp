@@ -4,18 +4,14 @@ import fsp from "fs/promises";
 import fs from "fs";
 import path from "path";
 import { logger } from "../utils/logger";
-import { defaultConfig } from "../constants";
+import { DEFAULT_CONFIG_FILE_NAME, defaultConfig } from "../constants";
 import inquirer from "inquirer";
+import { doesConfigFileExist } from "../utils";
 
 snapp.command("init").action(initSnapp);
 
-function doesConfigFileExist(): boolean {
-  const filePath = path.join(process.cwd(), "snapp.config.json");
-  return fs.existsSync(filePath);
-}
-
 async function createConfigFile(config: Partial<SnappConfigFile>) {
-  const filePath = path.join(process.cwd(), "snapp.config.json");
+  const filePath = path.join(process.cwd(), DEFAULT_CONFIG_FILE_NAME);
 
   if (doesConfigFileExist()) {
     logger.error(

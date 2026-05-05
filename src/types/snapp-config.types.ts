@@ -1,3 +1,5 @@
+export type Platform = "ios" | "android";
+
 type Project = {
   name?: string;
   platforms?: {

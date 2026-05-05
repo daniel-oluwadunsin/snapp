@@ -1,7 +1,7 @@
 import { SnappConfigFile } from "../types/snapp-config.types";
 
+export const DEFAULT_CONFIG_FILE_NAME = "snapp.config.json";
 export const IAMGE_FORMATS = ["png", "jpg", "jpeg"] as const;
-
 export const DEFAULT_SCREENSHOT_OUTPUT_DIR = "./screenshots";
 export const DEFAULT_SCREENSHOT_FORMAT = "png";
 export const DEFAULT_SCREENSHOT_STRUCTURE = {

@@ -1,6 +1,7 @@
 import boxen from "boxen";
 import chalk from "chalk";
 import figlet from "figlet";
+import ora, { Ora } from "ora";
 
 export class SnappLogger {
   info(...messages: any[]) {
@@ -36,6 +37,21 @@ export class SnappLogger {
     );
 
     console.log(chalk.green(brand));
+  }
+
+  startSpinner(message: string): Ora {
+    const spinner = ora(message).start();
+    return spinner;
+  }
+
+  stopSpinner(spinner: Ora, successMessage?: string, warningMessage?: string) {
+    spinner.stop();
+    if (successMessage) {
+      this.success(successMessage);
+    }
+    if (warningMessage) {
+      this.warn(warningMessage);
+    }
   }
 }
 
