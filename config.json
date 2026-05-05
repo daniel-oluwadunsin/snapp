@@ -1,0 +1,63 @@
+{
+  "project": {
+    "name": "Snapp",
+    "bundleId": {
+      "ios": "com.danieloluwadunsin.snapp",
+      "android": "com.danieloluwadunsin.snapp"
+    }
+  },
+
+  "runtime": {
+    "timeoutMs": 6000000,
+    "delayAfterLaunchMs": 5000
+  },
+
+  "deepLinks": {
+    "scheme": "myapp",
+    "prefix": "myapp://",
+    "android": {
+      "host": "myapp.com",
+      "pathPrefix": "/"
+    },
+    "ios": {
+      "host": "myapp.com",
+      "pathPrefix": "/"
+    }
+  },
+
+  "screens": [
+    {
+      "name": "Home",
+      "url": "home",
+      "waitFor": {
+        "type": "text",
+        "value": "Welcome to Snapp!"
+      },
+      "screenshot": {
+        "fileName": "home.png"
+      }
+    },
+    {
+      "name": "Profile",
+      "url": "profile",
+      "waitFor": {
+        "type": "timeout",
+        "value": 5000
+      },
+      "screenshot": {
+        "fileName": "profile.png"
+      }
+    }
+  ],
+
+  "output": {
+    "dir": "./screenshots",
+    "format": "png",
+    "structure": {
+      "ios": true,
+      "android": true,
+      "groupByDevice": true,
+      "groupByScreen": true
+    }
+  }
+}
