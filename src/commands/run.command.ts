@@ -535,12 +535,7 @@ async function runAppOnDevice(
   deviceId: string,
   config: SnappConfigFile,
 ): Promise<boolean> {
-  const bundleId =
-    typeof config.project.bundleId === "string"
-      ? config.project.bundleId
-      : platform === "ios"
-        ? config.project.bundleId.ios
-        : config.project.bundleId.android;
+  const bundleId = config.project.bundleId as string;
 
   let command = config.commands?.run
     ? platform === "ios"
@@ -548,11 +543,22 @@ async function runAppOnDevice(
       : config.commands?.run?.android
     : undefined;
 
-  if (!command)
+  if (!command) {
+    // if using default xcode and adb run commands, we expect the app to already be installed on the device. If it's not, the command will fail and we'll log an error about the app not being installed, rather than trying to install it ourselves
+    const appInstalled = await checkAppInstalled(platform, deviceId, bundleId);
+
+    if (!appInstalled) {
+      logger.error(
+        `App with bundle ID '${bundleId}' is not installed on ${platform} device '${deviceId}'. Please install the app and try again.`,
+      );
+      process.exit(1);
+    }
+
     command =
       platform === "ios"
         ? cmds.runApp(bundleId, deviceId).ios
         : cmds.runApp(bundleId, deviceId).android;
+  }
 
   try {
     const commandExecutable = command.split(" ")[0];
@@ -584,12 +590,7 @@ async function pollAppLaunched(
   const startTime = Date.now();
   const endTime = startTime + runTimeout;
 
-  const bundleId =
-    typeof config.project.bundleId === "string"
-      ? config.project.bundleId
-      : platform === "ios"
-        ? config.project.bundleId.ios
-        : config.project.bundleId.android;
+  const bundleId = config.project.bundleId as string;
 
   const appRunningCommand =
     platform === "ios"
@@ -651,6 +652,27 @@ async function pollAppLaunched(
   return false;
 }
 
+async function checkAppInstalled(
+  platform: Platform,
+  deviceId: string,
+  bundleId: string,
+): Promise<boolean> {
+  const command =
+    platform === "ios"
+      ? cmds.checkAppInstalled(bundleId, deviceId).ios
+      : cmds.checkAppInstalled(bundleId, deviceId).android;
+
+  try {
+    const { stdout } = await execAsync(command);
+
+    if (stdout) {
+      return true;
+    }
+  } catch (error) {}
+
+  return false;
+}
+
 async function startAppOnDevice(
   platform: Platform,
   deviceId: string,
@@ -659,6 +681,13 @@ async function startAppOnDevice(
   const spinner = logger.startSpinner(
     `Launching app on ${platform} device '${deviceId}'...`,
   );
+
+  config.project.bundleId =
+    typeof config.project.bundleId === "string"
+      ? config.project.bundleId
+      : platform === "ios"
+        ? config.project.bundleId.ios
+        : config.project.bundleId.android;
 
   await runAppOnDevice(platform, deviceId, config);
 

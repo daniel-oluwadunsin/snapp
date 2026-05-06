@@ -1,7 +1,7 @@
 {
   "project": {
     "name": "Godconnect",
-    "bundleId": "com.godconnect.online",
+    "bundleId": "com.godconnect.onlins",
     "platforms": {
       "ios": true,
       "android": false
