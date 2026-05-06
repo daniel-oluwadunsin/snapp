@@ -820,8 +820,6 @@ async function captureScreenshot(
     spinner,
     `Finished capturing screenshots on ${platform} device '${deviceId}'.`,
   );
-
-  process.exit(0);
 }
 
 async function runSnapp(options?: RunSnappOptions) {
@@ -842,12 +840,12 @@ async function runSnapp(options?: RunSnappOptions) {
         `Starting screenshot capture in ${config.runtime.delayAfterLaunchMs} ms...`,
       );
 
-      setTimeout(() => {
-        captureScreenshot("ios", runConfigs.iosDeviceUDID!, config);
-      }, config.runtime.delayAfterLaunchMs);
-    } else {
-      captureScreenshot("ios", runConfigs.iosDeviceUDID!, config);
+      await new Promise((resolve) =>
+        setTimeout(resolve, config.runtime.delayAfterLaunchMs),
+      );
     }
+
+    await captureScreenshot("ios", runConfigs.iosDeviceUDID!, config);
   }
 
   if (config.project.platforms.android) {
@@ -862,11 +860,11 @@ async function runSnapp(options?: RunSnappOptions) {
         `Starting screenshot capture in ${config.runtime.delayAfterLaunchMs} ms...`,
       );
 
-      setTimeout(() => {
-        captureScreenshot("android", runConfigs.androidDeviceUDID!, config);
-      }, config.runtime.delayAfterLaunchMs);
-    } else {
-      captureScreenshot("android", runConfigs.androidDeviceUDID!, config);
+      await new Promise((resolve) =>
+        setTimeout(resolve, config.runtime.delayAfterLaunchMs),
+      );
     }
+
+    await captureScreenshot("android", runConfigs.androidDeviceUDID!, config);
   }
 }
