@@ -29,15 +29,9 @@ export const defaultConfig: SnappConfigFile = {
 
   runtime: DEFAULT_RUNTIME_CONFIG,
   deepLinks: {
-    scheme: "myapp",
-    prefix: "myapp://",
-    android: {
-      host: "example.com",
-      pathPrefix: "/",
-    },
-    ios: {
-      host: "example.com",
-      pathPrefix: "/",
+    prefix: {
+      android: "myapp://",
+      ios: "myapp://",
     },
   },
   screens: [
@@ -56,8 +50,8 @@ export const defaultConfig: SnappConfigFile = {
       name: "Profile Screen",
       url: "/profile/1234",
       waitFor: {
-        type: "text",
-        value: "Profile",
+        type: "timeout",
+        value: 50000,
       },
       screenshot: {
         fileName: "profile.png",

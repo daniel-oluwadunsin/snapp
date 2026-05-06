@@ -2,12 +2,16 @@ import { exec, spawn } from "child_process";
 import { snapp } from "../config/program";
 import { Platform, SnappConfigFile } from "../types/snapp-config.types";
 import {
+  getBundleId,
+  getDeepLinkPrefix,
   hasIOSDeviceBooted,
   parseAndroidDeviceIdentifiers,
   parseAndroidEmulatorAvds,
   parseIOSDeviceIdentifiers,
   parseIosDevices,
   readAndValidateConfigFile,
+  resolveDeepLinkUrl,
+  resolveScreenshotFilePath,
 } from "../utils";
 import { logger } from "../utils/logger";
 import { cmds } from "../utils/cmd";
@@ -19,6 +23,7 @@ import {
 } from "../types/run-snapp.types";
 import { promisify } from "util";
 import inquirer from "inquirer";
+import { DEFAULT_SCREENSHOT_FORMAT } from "../constants";
 
 const execAsync = promisify(exec);
 
@@ -682,12 +687,7 @@ async function startAppOnDevice(
     `Launching app on ${platform} device '${deviceId}'...`,
   );
 
-  config.project.bundleId =
-    typeof config.project.bundleId === "string"
-      ? config.project.bundleId
-      : platform === "ios"
-        ? config.project.bundleId.ios
-        : config.project.bundleId.android;
+  config.project.bundleId = getBundleId(config.project.bundleId, platform);
 
   await runAppOnDevice(platform, deviceId, config);
 
@@ -709,6 +709,121 @@ async function startAppOnDevice(
   );
 }
 
+async function openDeepLink(
+  platform: Platform,
+  deviceId: string,
+  url: string,
+  bundleId: string,
+) {
+  const command =
+    platform === "ios"
+      ? cmds.openDeepLink(url, deviceId).ios
+      : cmds.openDeepLink(url, deviceId).android;
+
+  const confirmAppOpenedCommand =
+    platform === "ios"
+      ? cmds.checkAppRunningInForeGround(bundleId, deviceId).ios
+      : cmds.checkAppRunningInForeGround(bundleId, deviceId).android;
+
+  try {
+    await execAsync(command);
+
+    // we can check if the app is in foreground to confirm that the deep link was opened successfully, if after opening the deep link, the app is not in foreground, it might indicate that the deep link failed to open the app
+    const { stdout } = await execAsync(confirmAppOpenedCommand);
+
+    if (stdout && stdout.includes(bundleId)) {
+      logger.info(
+        `Successfully opened deep link '${url}' on ${platform} device '${deviceId}'.`,
+      );
+    } else {
+      logger.error(
+        `Failed to open deep link '${url}' on ${platform} device '${deviceId}'. App did not come to foreground as expected.`,
+      );
+    }
+  } catch (error) {
+    logger.error(
+      `Error executing command to open deep link '${url}' on ${platform} device '${deviceId}':`,
+      error,
+    );
+  }
+}
+
+async function captureScreenshot(
+  platform: Platform,
+  deviceId: string,
+  config: SnappConfigFile,
+) {
+  const bundleId = getBundleId(config.project.bundleId, platform);
+  const spinner = logger.startSpinner(
+    `Capturing screenshots on ${platform} device '${deviceId}'...`,
+  );
+
+  for (let i = 0; i < config.screens.length; i++) {
+    const screen = config.screens[i];
+
+    const deepLinkUrl = resolveDeepLinkUrl(
+      getDeepLinkPrefix(config.deepLinks.prefix, platform),
+      screen.url,
+    );
+
+    await openDeepLink(platform, deviceId, deepLinkUrl, bundleId);
+
+    if (screen.waitFor?.type === "timeout" && screen.waitFor.value) {
+      const screenName = screen.name || `screen-${i + 1}`;
+
+      logger.info(
+        `Waiting for ${screen.waitFor.value} ms before capturing screenshot for screen '${screenName}'...`,
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, Number(screen.waitFor.value)),
+      );
+    }
+
+    const fileFormat = config.output.format || DEFAULT_SCREENSHOT_FORMAT;
+
+    const fileName = `${screen.screenshot?.fileName || `screenshot-${i + 1}`}.${fileFormat}`;
+
+    const screenName = screen.name || `screen-${i + 1}`;
+
+    const filePath = resolveScreenshotFilePath(
+      platform,
+      fileName,
+      screenName,
+      config,
+    );
+
+    const command =
+      platform === "ios"
+        ? cmds.screenshot(deviceId, filePath).ios
+        : cmds.screenshot(deviceId, filePath).android;
+
+    try {
+      console.log(
+        `Executing command to capture screenshot for screen '${screenName}': ${command}`,
+      );
+      const { stdout } = await execAsync(command);
+
+      console.log(stdout);
+
+      logger.info(
+        `Captured screenshot for screen '${screen.name}' on ${platform} device '${deviceId}' at path: ${filePath}`,
+      );
+    } catch (error) {
+      logger.error(
+        `Error capturing screenshot for screen '${screen.name}' on ${platform} device '${deviceId}':`,
+        error,
+      );
+    }
+  }
+
+  logger.stopSpinner(
+    spinner,
+    `Finished capturing screenshots on ${platform} device '${deviceId}'.`,
+  );
+
+  process.exit(0);
+}
+
 async function runSnapp(options?: RunSnappOptions) {
   const config = await readAndValidateConfigFile();
   const runConfigs: RunConfig = {};
@@ -721,6 +836,18 @@ async function runSnapp(options?: RunSnappOptions) {
     );
 
     await startAppOnDevice("ios", runConfigs.iosDeviceUDID!, config);
+
+    if (config.runtime.delayAfterLaunchMs) {
+      logger.info(
+        `Starting screenshot capture in ${config.runtime.delayAfterLaunchMs} ms...`,
+      );
+
+      setTimeout(() => {
+        captureScreenshot("ios", runConfigs.iosDeviceUDID!, config);
+      }, config.runtime.delayAfterLaunchMs);
+    } else {
+      captureScreenshot("ios", runConfigs.iosDeviceUDID!, config);
+    }
   }
 
   if (config.project.platforms.android) {
@@ -729,5 +856,17 @@ async function runSnapp(options?: RunSnappOptions) {
     );
 
     await startAppOnDevice("android", runConfigs.androidDeviceUDID!, config);
+
+    if (config.runtime.delayAfterLaunchMs) {
+      logger.info(
+        `Starting screenshot capture in ${config.runtime.delayAfterLaunchMs} ms...`,
+      );
+
+      setTimeout(() => {
+        captureScreenshot("android", runConfigs.androidDeviceUDID!, config);
+      }, config.runtime.delayAfterLaunchMs);
+    } else {
+      captureScreenshot("android", runConfigs.androidDeviceUDID!, config);
+    }
   }
 }

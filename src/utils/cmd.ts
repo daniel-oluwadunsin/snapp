@@ -53,8 +53,22 @@ export const cmds = {
 
   checkAppInstalled(bundleId: string, deviceId: string) {
     return {
-      android: `adb -s ${deviceId} shell pm list packages | grep ${bundleId}`,
+      android: `adb -s ${deviceId} shell pm path ${bundleId}`,
       ios: `xcrun simctl get_app_container ${deviceId} ${bundleId}`,
+    };
+  },
+
+  openDeepLink(url: string, deviceId: string) {
+    return {
+      android: `adb -s ${deviceId} shell am start -a android.intent.action.VIEW -d "${url}"`,
+      ios: `xcrun simctl openurl ${deviceId} "${url}"`,
+    };
+  },
+
+  screenshot(deviceId: string, filePath: string) {
+    return {
+      android: `adb -s ${deviceId} exec-out screencap -p > "${filePath}"`,
+      ios: `xcrun simctl io ${deviceId} screenshot "${filePath}"`,
     };
   },
 };

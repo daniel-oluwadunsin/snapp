@@ -2,7 +2,7 @@
   "project": {
     "name": "Snapp",
     "platforms": {
-      "ios": true,
+      "ios": false,
       "android": true
     },
     "bundleId": {

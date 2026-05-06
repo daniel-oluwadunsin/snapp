@@ -5,6 +5,11 @@ export type BundleId = {
   android: string;
 };
 
+export type PathPrefix = {
+  android: string;
+  ios: string;
+};
+
 type Project = {
   name?: string;
   platforms?: {
@@ -20,19 +25,10 @@ type RunTime = {
 };
 
 type DeepLink = {
-  scheme?: string;
-  prefix?: string;
-  android?: {
-    host?: string;
-    pathPrefix?: string;
-  };
-  ios?: {
-    host?: string;
-    pathPrefix?: string;
-  };
+  prefix?: string | PathPrefix;
 };
 
-type DelayElement = "text" | "timeout";
+type DelayElement = "timeout";
 
 type Screen = {
   name?: string;

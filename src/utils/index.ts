@@ -1,8 +1,17 @@
 import path from "path";
 import fs from "fs";
 import fsp from "fs/promises";
-import { DEFAULT_CONFIG_FILE_NAME, IAMGE_FORMATS } from "../constants";
-import { BundleId, SnappConfigFile } from "../types/snapp-config.types";
+import {
+  DEFAULT_CONFIG_FILE_NAME,
+  DEFAULT_SCREENSHOT_OUTPUT_DIR,
+  IAMGE_FORMATS,
+} from "../constants";
+import {
+  BundleId,
+  PathPrefix,
+  Platform,
+  SnappConfigFile,
+} from "../types/snapp-config.types";
 import { logger } from "./logger";
 import { Device } from "../types/run-snapp.types";
 
@@ -53,30 +62,37 @@ export const validateConfigFile = (config: SnappConfigFile) => {
     throw new Error("Missing 'deepLinks' section in config file");
   }
 
-  if (!config?.deepLinks?.scheme || !config?.deepLinks?.prefix) {
-    throw new Error("Missing 'scheme' or 'prefix' in 'deepLinks' section");
-  }
+  const deeplinkRegex = /^(https?:\/\/.+|[a-zA-Z][a-zA-Z\d+.-]*:\/\/.*)$/;
 
-  if (config?.project?.platforms?.android) {
-    if (
-      !config?.deepLinks?.android ||
-      !config?.deepLinks?.android?.host ||
-      !config?.deepLinks?.android?.pathPrefix
-    ) {
+  if (config?.project?.platforms?.ios) {
+    const deeplinkPrefix = getDeepLinkPrefix(config.deepLinks.prefix, "ios");
+    if (!deeplinkPrefix) {
       throw new Error(
-        "Missing 'android' deep link configuration in 'deepLinks' section",
+        "Missing 'ios' deep link configuration in 'deepLinks' section",
+      );
+    }
+
+    if (!deeplinkRegex.test(deeplinkPrefix)) {
+      throw new Error(
+        `Invalid iOS deep link prefix '${deeplinkPrefix}'. It must start with a valid scheme (e.g., 'myapp://', 'http://', 'https://')`,
       );
     }
   }
 
-  if (config?.project?.platforms?.ios) {
-    if (
-      !config?.deepLinks?.ios ||
-      !config?.deepLinks?.ios?.host ||
-      !config?.deepLinks?.ios?.pathPrefix
-    ) {
+  if (config?.project?.platforms?.android) {
+    const deeplinkPrefix = getDeepLinkPrefix(
+      config.deepLinks.prefix,
+      "android",
+    );
+    if (!deeplinkPrefix) {
       throw new Error(
-        "Missing 'ios' deep link configuration in 'deepLinks' section",
+        "Missing 'android' deep link configuration in 'deepLinks' section",
+      );
+    }
+
+    if (!deeplinkRegex.test(deeplinkPrefix)) {
+      throw new Error(
+        `Invalid Android deep link prefix '${deeplinkPrefix}'. It must start with a valid scheme (e.g., 'myapp://', 'http://', 'https://')`,
       );
     }
   }
@@ -161,7 +177,9 @@ export const parseAndroidDeviceIdentifiers = (
 ): { active: string[]; inactive: string[] } => {
   let lines = output.split("\n");
   // remove the first "List of devices attached" line
-  lines = lines.splice(1);
+  lines = lines.filter(
+    (line) => !line.toLowerCase().includes("list of devices attached"),
+  );
   const activeDevices: string[] = [];
   const inactiveDevices: string[] = [];
 
@@ -204,4 +222,69 @@ export const hasIOSDeviceBooted = (output: string, deviceId: string) => {
     output.includes(`${deviceId}`) &&
     (output.includes("booted") || output.includes("finished"))
   );
+};
+
+export const getBundleId = (
+  bundleId: string | BundleId,
+  platform: Platform,
+): string => {
+  return typeof bundleId === "string"
+    ? bundleId
+    : platform === "ios"
+      ? bundleId.ios
+      : bundleId.android;
+};
+
+export function getDeepLinkPrefix(
+  deeplink: string | PathPrefix,
+  platform: Platform,
+): string {
+  return typeof deeplink === "string"
+    ? deeplink
+    : platform === "ios"
+      ? deeplink.ios
+      : deeplink.android;
+}
+
+export const resolveDeepLinkUrl = (prefix: string, url: string): string => {
+  if (
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith(prefix)
+  ) {
+    return url;
+  }
+
+  // like myapp://home or myapp://profile/1234 but prefix starts with myapp://, so url must start with home or profile/1234 not with myapp://home or myapp://profile/1234 or /home or /profile/1234
+
+  if (url.startsWith("/")) {
+    url = url.substring(1);
+  } else if (url.startsWith(prefix)) {
+    url = url.substring(prefix.length);
+  }
+
+  return prefix + url;
+};
+
+export const resolveScreenshotFilePath = (
+  platform: Platform,
+  fileName: string,
+  screenName: string,
+  config: SnappConfigFile,
+): string => {
+  const basePath = process.cwd();
+  const outputDir = config.output.dir || DEFAULT_SCREENSHOT_OUTPUT_DIR;
+
+  let fileBasePath;
+
+  if (config.output.structure?.groupByDevice) {
+    fileBasePath = path.join(basePath, outputDir, platform);
+  } else if (config.output.structure?.groupByScreen) {
+    fileName = `${platform}-${fileName}`;
+    fileBasePath = path.join(basePath, outputDir, screenName);
+  }
+
+  fs.mkdirSync(fileBasePath, { recursive: true });
+
+  return path.join(fileBasePath, fileName);
 };

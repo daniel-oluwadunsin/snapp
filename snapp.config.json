@@ -1,58 +1,45 @@
 {
   "project": {
     "name": "Godconnect",
-    "bundleId": "com.godconnect.onlins",
+    "bundleId": "com.godconnect.online",
     "platforms": {
-      "ios": true,
-      "android": false
+      "ios": false,
+      "android": true
     }
   },
   "runtime": {
     "timeoutMs": 50000000000000,
-    "delayAfterLaunchMs": 200000
+    "delayAfterLaunchMs": 2000
   },
   "deepLinks": {
-    "scheme": "myapp",
-    "prefix": "myapp://",
-    "android": {
-      "host": "example.com",
-      "pathPrefix": "/"
-    },
-    "ios": {
-      "host": "example.com",
-      "pathPrefix": "/"
+    "prefix": {
+      "android": "godconnect://",
+      "ios": "godconnect://"
     }
   },
   "screens": [
     {
       "name": "Home Screen",
-      "url": "home",
+      "url": "/app/post",
       "waitFor": {
         "type": "timeout",
         "value": 3000
       },
       "screenshot": {
-        "fileName": "home.png"
+        "fileName": "home"
       }
     },
     {
       "name": "Profile Screen",
-      "url": "/profile/1234",
-      "waitFor": {
-        "type": "text",
-        "value": "Profile"
-      },
-      "screenshot": {
-        "fileName": "profile.png"
-      }
+      "url": "/app/profile?userId=7788"
     }
   ],
   "output": {
     "dir": "./screenshots",
     "format": "png",
     "structure": {
-      "groupByDevice": true,
-      "groupByScreen": false
+      "groupByDevice": false,
+      "groupByScreen": true
     }
   }
 }
