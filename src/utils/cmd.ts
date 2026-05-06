@@ -29,4 +29,11 @@ export const cmds = {
       android: `adb -s ${deviceId} shell getprop sys.boot_completed`, // returns "1" if booted, empty if not
     };
   },
+
+  runApp(bundleId: string, deviceId: string) {
+    return {
+      ios: `xcrun simctl launch ${deviceId} ${bundleId}`,
+      android: `adb -s ${deviceId} shell monkey -p ${bundleId} -c android.intent.category.LAUNCHER 1`,
+    };
+  },
 };

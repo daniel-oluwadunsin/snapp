@@ -8,12 +8,13 @@
     "bundleId": {
       "ios": "com.danieloluwadunsin.snapp",
       "android": "com.danieloluwadunsin.snapp"
-    },
-    "commands": {
-      "run": {
-        "ios": "flutter run -d ios",
-        "android": "flutter run -d android"
-      }
+    }
+  },
+
+  "commands": {
+    "run": {
+      "ios": "flutter run -d ios",
+      "android": "flutter run -d android"
     }
   },
 

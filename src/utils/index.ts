@@ -4,6 +4,7 @@ import fsp from "fs/promises";
 import { DEFAULT_CONFIG_FILE_NAME, IAMGE_FORMATS } from "../constants";
 import { BundleId, SnappConfigFile } from "../types/snapp-config.types";
 import { logger } from "./logger";
+import { Device } from "../types/run-snapp.types";
 
 export function doesConfigFileExist(): boolean {
   const filePath = path.join(process.cwd(), "snapp.config.json");
@@ -109,6 +110,26 @@ export const readAndValidateConfigFile = async (): Promise<SnappConfigFile> => {
     logger.error("Error reading or validating config file:", error);
     process.exit(1);
   }
+};
+
+export const parseIosDevices = (output: string): Device[] => {
+  const lines = output.split("\n");
+  const devices = [];
+
+  lines.forEach((line) => {
+    const match = line.match(/(.*)\s\(([^)]+)\)\s\((Booted|Shutdown|.*)\)/);
+    if (match) {
+      const name = match[1].trim();
+      const udid = match[2];
+      const state = match[3];
+      devices.push({
+        name,
+        id: udid,
+      });
+    }
+  });
+
+  return devices;
 };
 
 export const parseIOSDeviceIdentifiers = (

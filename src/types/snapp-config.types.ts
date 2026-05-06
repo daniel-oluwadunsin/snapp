@@ -1,5 +1,10 @@
 export type Platform = "ios" | "android";
 
+export type BundleId = {
+  ios: string;
+  android: string;
+};
+
 type Project = {
   name?: string;
   platforms?: {
@@ -7,11 +12,6 @@ type Project = {
     android: boolean;
   };
   bundleId?: string | BundleId;
-};
-
-export type BundleId = {
-  ios: string;
-  android: string;
 };
 
 type RunTime = {
@@ -55,10 +55,15 @@ type Output = {
   };
 };
 
+type Command = {
+  run: Record<Platform, string>;
+};
+
 export type SnappConfigFile = {
   project: Project;
   runtime: RunTime;
   deepLinks: DeepLink;
   screens: Screen[];
   output: Output;
+  commands?: Command;
 };

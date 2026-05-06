@@ -1,17 +1,24 @@
 import { exec, spawn } from "child_process";
 import { snapp } from "../config/program";
-import { Platform } from "../types/snapp-config.types";
+import { Platform, SnappConfigFile } from "../types/snapp-config.types";
 import {
   hasIOSDeviceBooted,
   parseAndroidDeviceIdentifiers,
   parseAndroidEmulatorAvds,
   parseIOSDeviceIdentifiers,
+  parseIosDevices,
   readAndValidateConfigFile,
 } from "../utils";
 import { logger } from "../utils/logger";
 import { cmds } from "../utils/cmd";
-import { RunConfig, RunSnappOptions } from "../types/run-snapp.types";
+import {
+  Device,
+  RunConfig,
+  RunSnappOptions,
+  RunStatus,
+} from "../types/run-snapp.types";
 import { promisify } from "util";
+import inquirer from "inquirer";
 
 const execAsync = promisify(exec);
 
@@ -27,6 +34,25 @@ snapp
   )
   .description("Run the app on a connected device or emulator")
   .action(runSnapp);
+
+async function validateRunOptions(
+  options: RunSnappOptions,
+  config: SnappConfigFile,
+) {
+  if (options?.iosDeviceUDID && !config.project.platforms.ios) {
+    logger.error(
+      "iOS device specified but iOS platform is not enabled in config file.",
+    );
+    process.exit(1);
+  }
+
+  if (options?.androidDeviceUDID && !config.project.platforms.android) {
+    logger.error(
+      "Android device specified but Android platform is not enabled in config file.",
+    );
+    process.exit(1);
+  }
+}
 
 async function getBootedDevices(platform: Platform): Promise<string[]> {
   // Run the appropriate command to get the list of booted devices for the given platform.
@@ -79,8 +105,6 @@ async function getAllDevices(platform: Platform): Promise<string[]> {
     }
 
     if (stdout) {
-      logger.info(`All ${platform} devices output: ${stdout}`);
-
       if (platform === "ios") {
         const parsedDevices = parseIOSDeviceIdentifiers(stdout);
         return [...parsedDevices.active, ...parsedDevices.inactive];
@@ -98,6 +122,82 @@ async function getAllDevices(platform: Platform): Promise<string[]> {
       error,
     );
     return [];
+  }
+}
+
+async function getAllAndSelectDevice(
+  platform: Platform,
+): Promise<Device | undefined> {
+  const command =
+    platform === "ios" ? cmds.getAllDevices.ios : cmds.getAllDevices.android;
+
+  try {
+    const { stdout, stderr } = await execAsync(command);
+
+    if (stderr) {
+      logger.error(
+        `Error output while getting all ${platform} devices: ${stderr}`,
+      );
+      return undefined;
+    }
+
+    if (stdout) {
+      logger.info(`All ${platform} devices output: ${stdout}`);
+    }
+
+    if (platform === "ios") {
+      const devices = parseIosDevices(stdout);
+
+      const deviceOptions = devices.map((device) => ({
+        name: device.name || device.id,
+        value: device.id,
+      }));
+
+      const selectedDeviceId = await inquirer
+        .prompt({
+          type: "select",
+          name: "deviceId",
+          message: `Select a ${platform} device:`,
+          choices: deviceOptions,
+        })
+        .then((answers) => answers.deviceId);
+
+      const selectedDevice = devices.find(
+        (device) => device.id === selectedDeviceId,
+      );
+
+      return selectedDevice;
+    } else if (platform === "android") {
+      const devices = parseAndroidEmulatorAvds(stdout);
+
+      const deviceOptions = devices.map((device) => ({
+        name: device,
+        value: device,
+      }));
+
+      const selectedDeviceName = await inquirer
+        .prompt({
+          type: "select",
+          name: "deviceName",
+          message: `Select a ${platform} device:`,
+          choices: deviceOptions,
+        })
+        .then((answers) => answers.deviceName);
+
+      const selectedDevice = devices.find(
+        (device) => device === selectedDeviceName,
+      );
+
+      return selectedDevice ? { name: selectedDevice } : undefined;
+    }
+
+    return undefined;
+  } catch (error) {
+    logger.error(
+      `Error executing command to get all ${platform} devices:`,
+      error,
+    );
+    return undefined;
   }
 }
 
@@ -237,205 +337,282 @@ async function launchSimulator(
   return false;
 }
 
+async function launchIOSSimunlatorAndGetDeviceUDID(
+  defaultIosDeviceUDID?: string,
+): Promise<string> {
+  let iosDeviceUDID = "";
+  const spinner = logger.startSpinner("Checking for booted iOS devices...");
+
+  const bootedIosDevices = await getBootedDevices("ios");
+
+  if (!defaultIosDeviceUDID) {
+    if (bootedIosDevices.length === 0) {
+      logger.stopSpinner(spinner, undefined, "No booted iOS devices found.");
+    } else {
+      iosDeviceUDID = bootedIosDevices[0];
+      logger.stopSpinner(
+        spinner,
+        `Using booted iOS device: ${bootedIosDevices[0]}`,
+      );
+    }
+  } else {
+    if (bootedIosDevices.includes(defaultIosDeviceUDID)) {
+      iosDeviceUDID = defaultIosDeviceUDID;
+      logger.stopSpinner(
+        spinner,
+        `Using specified iOS device: ${defaultIosDeviceUDID}`,
+      );
+    } else {
+      logger.stopSpinner(
+        spinner,
+        undefined,
+        `Specified iOS device '${defaultIosDeviceUDID}' is not booted yet.`,
+      );
+    }
+  }
+
+  if (!iosDeviceUDID) {
+    const devices = await getAllDevices("ios");
+    let iosDeviceUDID = "";
+
+    if (defaultIosDeviceUDID && !devices.includes(defaultIosDeviceUDID)) {
+      logger.error(
+        `Specified iOS device '${defaultIosDeviceUDID}' not found among available devices.`,
+      );
+      process.exit(1);
+    } else {
+    }
+
+    iosDeviceUDID =
+      defaultIosDeviceUDID ||
+      (await getAllAndSelectDevice("ios")?.then((d) => d?.id)) ||
+      devices[0];
+
+    if (!iosDeviceUDID) {
+      logger.error("No iOS devices found to launch.");
+      process.exit(1);
+    }
+
+    const spinner = logger.startSpinner(
+      `Waiting for iOS device '${iosDeviceUDID}' to boot...`,
+    );
+
+    const launched = await launchSimulator("ios", iosDeviceUDID);
+
+    if (launched) {
+      const booted = await waitForDeviceBoot("ios", iosDeviceUDID);
+
+      if (booted) {
+        iosDeviceUDID = iosDeviceUDID;
+        logger.stopSpinner(
+          spinner,
+          `iOS device '${iosDeviceUDID}' is now booted and ready.`,
+        );
+      } else {
+        logger.stopSpinner(
+          spinner,
+          undefined,
+          `Failed to boot iOS device '${iosDeviceUDID}' within the expected time.`,
+        );
+        process.exit(1);
+      }
+    } else {
+      logger.stopSpinner(
+        spinner,
+        undefined,
+        `Failed to launch iOS device '${iosDeviceUDID}'.`,
+      );
+      process.exit(1);
+    }
+  }
+
+  return iosDeviceUDID;
+}
+
+async function launchAndroidEmulatorAndGetDeviceUDID(
+  defaultAndroidDeviceUDID?: string,
+): Promise<string> {
+  let androidDeviceUDID = "";
+  const spinner = logger.startSpinner("Checking for booted Android devices...");
+
+  const bootedAndroidDevices = await getBootedDevices("android");
+
+  if (!defaultAndroidDeviceUDID) {
+    if (bootedAndroidDevices.length === 0) {
+      logger.stopSpinner(
+        spinner,
+        undefined,
+        "No booted Android devices found.",
+      );
+    } else {
+      androidDeviceUDID = bootedAndroidDevices[0];
+      logger.stopSpinner(
+        spinner,
+        `Using booted Android device: ${bootedAndroidDevices[0]}`,
+      );
+    }
+  } else {
+    if (bootedAndroidDevices.includes(defaultAndroidDeviceUDID)) {
+      androidDeviceUDID = defaultAndroidDeviceUDID;
+      logger.stopSpinner(
+        spinner,
+        `Using specified Android device: ${defaultAndroidDeviceUDID}`,
+      );
+    } else {
+      logger.stopSpinner(
+        spinner,
+        undefined,
+        `Specified Android device '${defaultAndroidDeviceUDID}' is not booted yet.`,
+      );
+    }
+  }
+
+  if (!androidDeviceUDID) {
+    const devices = await getAllDevices("android");
+    let androidDeviceUDID = "";
+
+    if (
+      defaultAndroidDeviceUDID &&
+      !devices.includes(defaultAndroidDeviceUDID)
+    ) {
+      logger.error(
+        `Specified Android device '${defaultAndroidDeviceUDID}' not found among available devices.`,
+      );
+      process.exit(1);
+    }
+
+    // at this point, this is just the avd name, not the running emulator id
+    // E.G PIXEL_5_API_34
+    // running emulator id example is: emulator-5554
+    androidDeviceUDID =
+      defaultAndroidDeviceUDID ||
+      (await getAllAndSelectDevice("android")?.then((d) => d?.name)) ||
+      devices[0];
+
+    if (!androidDeviceUDID) {
+      logger.error("No Android devices found to launch.");
+      process.exit(1);
+    }
+
+    const spinner = logger.startSpinner(
+      `Waiting for Android device '${androidDeviceUDID}' to boot...`,
+    );
+
+    const launched = await launchSimulator("android", androidDeviceUDID);
+
+    if (launched) {
+      const startedDeviceId = await waitForAndroidEmulatorStart(
+        androidDeviceUDID,
+        120000,
+      );
+
+      if (startedDeviceId) {
+        const booted = await waitForDeviceBoot("android", startedDeviceId);
+
+        if (booted) {
+          androidDeviceUDID = startedDeviceId;
+
+          logger.stopSpinner(
+            spinner,
+            `Android device '${androidDeviceUDID}' is now booted and ready.`,
+          );
+        } else {
+          logger.stopSpinner(
+            spinner,
+            undefined,
+            `Failed to boot Android device '${androidDeviceUDID}' within the expected time.`,
+          );
+          process.exit(1);
+        }
+      } else {
+        logger.stopSpinner(
+          spinner,
+          undefined,
+          `Failed to start Android emulator with device ID '${androidDeviceUDID}' within the expected time.`,
+        );
+        process.exit(1);
+      }
+    } else {
+      logger.stopSpinner(
+        spinner,
+        undefined,
+        `Failed to launch Android device '${androidDeviceUDID}'.`,
+      );
+      process.exit(1);
+    }
+  }
+
+  return androidDeviceUDID;
+}
+
+async function runAppOnDevice(
+  platform: Platform,
+  deviceId: string,
+  config: SnappConfigFile,
+): Promise<boolean> {
+  const bundleId =
+    typeof config.project.bundleId === "string"
+      ? config.project.bundleId
+      : platform === "ios"
+        ? config.project.bundleId.ios
+        : config.project.bundleId.android;
+
+  let command = config.commands?.run
+    ? platform === "ios"
+      ? config.commands?.run?.ios
+      : config.commands?.run?.android
+    : undefined;
+
+  if (!command)
+    command =
+      platform === "ios"
+        ? cmds.runApp(bundleId, deviceId).ios
+        : cmds.runApp(bundleId, deviceId).android;
+
+  try {
+    const commandExecutable = command.split(" ")[0];
+    const commandArgs = command.split(" ").slice(1);
+
+    const runCommandRef = spawn(commandExecutable, commandArgs, {
+      stdio: "ignore",
+      detached: true,
+    });
+
+    runCommandRef.unref();
+
+    // poll for app opened status
+    return true;
+  } catch (error) {
+    logger.error(
+      `Error executing command ${command} to run app on ${platform} device ${deviceId}:`,
+      error,
+    );
+    return false;
+  }
+}
+
+// async function pollAppLaunched(
+//   deviceId: string,
+//   bundleId: string,
+// ): Promise<boolean> {}
+
 async function runSnapp(options?: RunSnappOptions) {
   const config = await readAndValidateConfigFile();
   const runConfigs: RunConfig = {};
 
+  await validateRunOptions(options || {}, config);
+
   if (config.project.platforms.ios) {
-    const spinner = logger.startSpinner("Checking for booted iOS devices...");
-
-    const bootedIosDevices = await getBootedDevices("ios");
-
-    if (!options.iosDeviceUDID) {
-      if (bootedIosDevices.length === 0) {
-        logger.stopSpinner(spinner, undefined, "No booted iOS devices found.");
-      } else {
-        runConfigs.iosDeviceUDID = bootedIosDevices[0];
-        logger.stopSpinner(
-          spinner,
-          `Using booted iOS device: ${bootedIosDevices[0]}`,
-        );
-      }
-    } else {
-      if (bootedIosDevices.includes(options.iosDeviceUDID)) {
-        runConfigs.iosDeviceUDID = options.iosDeviceUDID;
-        logger.stopSpinner(
-          spinner,
-          `Using specified iOS device: ${options.iosDeviceUDID}`,
-        );
-      } else {
-        logger.stopSpinner(
-          spinner,
-          undefined,
-          `Specified iOS device '${options.iosDeviceUDID}' is not booted yet.`,
-        );
-      }
-    }
-
-    if (!runConfigs.iosDeviceUDID) {
-      const devices = await getAllDevices("ios");
-      let iosDeviceUDID = "";
-
-      if (options?.iosDeviceUDID && !devices.includes(options.iosDeviceUDID)) {
-        logger.error(
-          `Specified iOS device '${options.iosDeviceUDID}' not found among available devices.`,
-        );
-        process.exit(1);
-      }
-
-      iosDeviceUDID = options?.iosDeviceUDID || devices[0];
-
-      if (!iosDeviceUDID) {
-        logger.error("No iOS devices found to launch.");
-        process.exit(1);
-      }
-
-      const spinner = logger.startSpinner(
-        `Waiting for iOS device '${iosDeviceUDID}' to boot...`,
-      );
-
-      const launched = await launchSimulator("ios", iosDeviceUDID);
-
-      if (launched) {
-        const booted = await waitForDeviceBoot("ios", iosDeviceUDID);
-
-        if (booted) {
-          runConfigs.iosDeviceUDID = iosDeviceUDID;
-          logger.stopSpinner(
-            spinner,
-            `iOS device '${iosDeviceUDID}' is now booted and ready.`,
-          );
-        } else {
-          logger.stopSpinner(
-            spinner,
-            undefined,
-            `Failed to boot iOS device '${iosDeviceUDID}' within the expected time.`,
-          );
-          process.exit(1);
-        }
-      } else {
-        logger.stopSpinner(
-          spinner,
-          undefined,
-          `Failed to launch iOS device '${iosDeviceUDID}'.`,
-        );
-        process.exit(1);
-      }
-    }
+    runConfigs.iosDeviceUDID = await launchIOSSimunlatorAndGetDeviceUDID(
+      options.iosDeviceUDID,
+    );
   }
 
   if (config.project.platforms.android) {
-    const spinner = logger.startSpinner(
-      "Checking for booted Android devices...",
+    runConfigs.androidDeviceUDID = await launchAndroidEmulatorAndGetDeviceUDID(
+      options.androidDeviceUDID,
     );
-
-    const bootedAndroidDevices = await getBootedDevices("android");
-
-    if (!options.androidDeviceUDID) {
-      if (bootedAndroidDevices.length === 0) {
-        logger.stopSpinner(
-          spinner,
-          undefined,
-          "No booted Android devices found.",
-        );
-      } else {
-        runConfigs.androidDeviceUDID = bootedAndroidDevices[0];
-        logger.stopSpinner(
-          spinner,
-          `Using booted Android device: ${bootedAndroidDevices[0]}`,
-        );
-      }
-    } else {
-      if (bootedAndroidDevices.includes(options.androidDeviceUDID)) {
-        runConfigs.androidDeviceUDID = options.androidDeviceUDID;
-        logger.stopSpinner(
-          spinner,
-          `Using specified Android device: ${options.androidDeviceUDID}`,
-        );
-      } else {
-        logger.stopSpinner(
-          spinner,
-          undefined,
-          `Specified Android device '${options.androidDeviceUDID}' is not booted yet.`,
-        );
-      }
-    }
-
-    if (!runConfigs.androidDeviceUDID) {
-      const devices = await getAllDevices("android");
-      let androidDeviceUDID = "";
-
-      if (
-        options?.androidDeviceUDID &&
-        !devices.includes(options.androidDeviceUDID)
-      ) {
-        logger.error(
-          `Specified Android device '${options.androidDeviceUDID}' not found among available devices.`,
-        );
-        process.exit(1);
-      }
-
-      // at this point, this is just the avd name, not the running emulator id
-      // E.G PIXEL_5_API_34
-      // running emulator id example is: emulator-5554
-      androidDeviceUDID = options?.androidDeviceUDID || devices[0];
-
-      if (!androidDeviceUDID) {
-        logger.error("No Android devices found to launch.");
-        process.exit(1);
-      }
-
-      const spinner = logger.startSpinner(
-        `Waiting for Android device '${androidDeviceUDID}' to boot...`,
-      );
-
-      const launched = await launchSimulator("android", androidDeviceUDID);
-
-      if (launched) {
-        const startedDeviceId = await waitForAndroidEmulatorStart(
-          androidDeviceUDID,
-          120000,
-        );
-
-        if (startedDeviceId) {
-          const booted = await waitForDeviceBoot("android", startedDeviceId);
-
-          if (booted) {
-            runConfigs.androidDeviceUDID = startedDeviceId;
-
-            logger.stopSpinner(
-              spinner,
-              `Android device '${androidDeviceUDID}' is now booted and ready.`,
-            );
-          } else {
-            logger.stopSpinner(
-              spinner,
-              undefined,
-              `Failed to boot Android device '${androidDeviceUDID}' within the expected time.`,
-            );
-            process.exit(1);
-          }
-        } else {
-          logger.stopSpinner(
-            spinner,
-            undefined,
-            `Failed to start Android emulator with device ID '${androidDeviceUDID}' within the expected time.`,
-          );
-          process.exit(1);
-        }
-      } else {
-        logger.stopSpinner(
-          spinner,
-          undefined,
-          `Failed to launch Android device '${androidDeviceUDID}'.`,
-        );
-        process.exit(1);
-      }
-    }
   }
-
-  logger.log(JSON.stringify(runConfigs, null, 2));
-  logger.log(JSON.stringify(config, null, 2));
 
   // Check the devices we will be doing it for first, from the config.
 
