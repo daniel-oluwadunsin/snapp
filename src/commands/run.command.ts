@@ -355,64 +355,49 @@ async function launchIOSSimunlatorAndGetDeviceUDID(
         `Using booted iOS device: ${bootedIosDevices[0]}`,
       );
     }
-  } else {
-    if (bootedIosDevices.includes(defaultIosDeviceUDID)) {
-      iosDeviceUDID = defaultIosDeviceUDID;
-      logger.stopSpinner(
-        spinner,
-        `Using specified iOS device: ${defaultIosDeviceUDID}`,
-      );
-    } else {
-      logger.stopSpinner(
-        spinner,
-        undefined,
-        `Specified iOS device '${defaultIosDeviceUDID}' is not booted yet.`,
-      );
-    }
   }
 
   if (!iosDeviceUDID) {
     const devices = await getAllDevices("ios");
-    let iosDeviceUDID = "";
+    let _iosDeviceUDID = "";
 
     if (defaultIosDeviceUDID && !devices.includes(defaultIosDeviceUDID)) {
       logger.error(
         `Specified iOS device '${defaultIosDeviceUDID}' not found among available devices.`,
       );
       process.exit(1);
-    } else {
     }
 
-    iosDeviceUDID =
+    _iosDeviceUDID =
       defaultIosDeviceUDID ||
       (await getAllAndSelectDevice("ios")?.then((d) => d?.id)) ||
       devices[0];
 
-    if (!iosDeviceUDID) {
+    if (!_iosDeviceUDID) {
       logger.error("No iOS devices found to launch.");
       process.exit(1);
     }
 
     const spinner = logger.startSpinner(
-      `Waiting for iOS device '${iosDeviceUDID}' to boot...`,
+      `Waiting for iOS device '${_iosDeviceUDID}' to boot...`,
     );
 
-    const launched = await launchSimulator("ios", iosDeviceUDID);
+    const launched = await launchSimulator("ios", _iosDeviceUDID);
 
     if (launched) {
-      const booted = await waitForDeviceBoot("ios", iosDeviceUDID);
+      const booted = await waitForDeviceBoot("ios", _iosDeviceUDID);
 
       if (booted) {
-        iosDeviceUDID = iosDeviceUDID;
+        iosDeviceUDID = _iosDeviceUDID;
         logger.stopSpinner(
           spinner,
-          `iOS device '${iosDeviceUDID}' is now booted and ready.`,
+          `iOS device '${_iosDeviceUDID}' is now booted and ready.`,
         );
       } else {
         logger.stopSpinner(
           spinner,
           undefined,
-          `Failed to boot iOS device '${iosDeviceUDID}' within the expected time.`,
+          `Failed to boot iOS device '${_iosDeviceUDID}' within the expected time.`,
         );
         process.exit(1);
       }
@@ -420,7 +405,7 @@ async function launchIOSSimunlatorAndGetDeviceUDID(
       logger.stopSpinner(
         spinner,
         undefined,
-        `Failed to launch iOS device '${iosDeviceUDID}'.`,
+        `Failed to launch iOS device '${_iosDeviceUDID}'.`,
       );
       process.exit(1);
     }
@@ -580,7 +565,6 @@ async function runAppOnDevice(
 
     runCommandRef.unref();
 
-    // poll for app opened status
     return true;
   } catch (error) {
     logger.error(
@@ -591,10 +575,110 @@ async function runAppOnDevice(
   }
 }
 
-// async function pollAppLaunched(
-//   deviceId: string,
-//   bundleId: string,
-// ): Promise<boolean> {}
+async function pollAppLaunched(
+  platform: Platform,
+  deviceId: string,
+  config: SnappConfigFile,
+): Promise<boolean> {
+  const runTimeout = config.runtime?.timeoutMs || 120000;
+  const startTime = Date.now();
+  const endTime = startTime + runTimeout;
+
+  const bundleId =
+    typeof config.project.bundleId === "string"
+      ? config.project.bundleId
+      : platform === "ios"
+        ? config.project.bundleId.ios
+        : config.project.bundleId.android;
+
+  const appRunningCommand =
+    platform === "ios"
+      ? cmds.checkAppRunning(bundleId, deviceId).ios
+      : cmds.checkAppRunning(bundleId, deviceId).android;
+
+  const appRunningInForegroundCommand =
+    platform === "ios"
+      ? cmds.checkAppRunningInForeGround(bundleId, deviceId).ios
+      : cmds.checkAppRunningInForeGround(bundleId, deviceId).android;
+
+  if (platform === "android") {
+    // for android, we first check if the app process is running at all, then check if it's in the foreground
+    let appRunning = false;
+    let appInForeground = false;
+
+    while (Date.now() < endTime && !appInForeground) {
+      try {
+        const { stdout } = await execAsync(appRunningCommand);
+
+        if (stdout) {
+          appRunning = true;
+
+          const { stdout: foregroundStdout } = await execAsync(
+            appRunningInForegroundCommand,
+          );
+
+          if (foregroundStdout && foregroundStdout.includes(bundleId)) {
+            appInForeground = true;
+            break;
+          }
+        }
+      } catch (error) {}
+    }
+
+    if (appRunning && appInForeground) {
+      return true;
+    }
+  } else {
+    // forground and background check is the same for iOS, so we just check if the app is running
+    while (Date.now() < endTime) {
+      try {
+        const { stdout } = await execAsync(appRunningCommand);
+
+        if (stdout && stdout.includes(bundleId)) {
+          return true;
+        }
+      } catch (error) {}
+    }
+  }
+
+  // if it gets here, it means the app did not launch within the expected time
+  logger.error(
+    `App did not launch on ${platform} device ${deviceId} within the expected time of ${
+      runTimeout / 1000
+    } seconds.`,
+  );
+
+  return false;
+}
+
+async function startAppOnDevice(
+  platform: Platform,
+  deviceId: string,
+  config: SnappConfigFile,
+): Promise<void> {
+  const spinner = logger.startSpinner(
+    `Launching app on ${platform} device '${deviceId}'...`,
+  );
+
+  await runAppOnDevice(platform, deviceId, config);
+
+  const appLaunched = await pollAppLaunched(platform, deviceId, config);
+
+  if (!appLaunched) {
+    logger.stopSpinner(
+      spinner,
+      undefined,
+      undefined,
+      `Failed to detect app launch on ${platform} device '${deviceId}'.`,
+    );
+    process.exit(1);
+  }
+
+  logger.stopSpinner(
+    spinner,
+    `App successfully launched on ${platform} device '${deviceId}'.`,
+  );
+}
 
 async function runSnapp(options?: RunSnappOptions) {
   const config = await readAndValidateConfigFile();
@@ -606,18 +690,15 @@ async function runSnapp(options?: RunSnappOptions) {
     runConfigs.iosDeviceUDID = await launchIOSSimunlatorAndGetDeviceUDID(
       options.iosDeviceUDID,
     );
+
+    await startAppOnDevice("ios", runConfigs.iosDeviceUDID!, config);
   }
 
   if (config.project.platforms.android) {
     runConfigs.androidDeviceUDID = await launchAndroidEmulatorAndGetDeviceUDID(
       options.androidDeviceUDID,
     );
+
+    await startAppOnDevice("android", runConfigs.androidDeviceUDID!, config);
   }
-
-  // Check the devices we will be doing it for first, from the config.
-
-  // Check if the devices are connected by running each emulator/simulator command and checking the output for connected devices.
-  // If any of the devices are not connected, show an error message and exit.
-  // If all devices are connected, run the app on each device using the appropriate command for each platform.
-  // ==== AFTER RUNNING THE APP ====
 }

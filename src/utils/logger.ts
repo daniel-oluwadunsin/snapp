@@ -44,13 +44,20 @@ export class SnappLogger {
     return spinner;
   }
 
-  stopSpinner(spinner: Ora, successMessage?: string, warningMessage?: string) {
-    spinner.stop();
+  stopSpinner(
+    spinner: Ora,
+    successMessage?: string,
+    warningMessage?: string,
+    errorMessage?: string,
+  ) {
     if (successMessage) {
-      this.success(successMessage);
+      spinner.succeed(successMessage);
     }
     if (warningMessage) {
-      this.warn(warningMessage);
+      spinner.warn(warningMessage);
+    }
+    if (errorMessage) {
+      spinner.fail(errorMessage);
     }
   }
 }

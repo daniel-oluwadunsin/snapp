@@ -3,13 +3,13 @@
     "name": "Godconnect",
     "bundleId": "com.godconnect.online",
     "platforms": {
-      "ios": false,
-      "android": true
+      "ios": true,
+      "android": false
     }
   },
   "runtime": {
-    "timeoutMs": 5000,
-    "delayAfterLaunchMs": 2000
+    "timeoutMs": 50000000000000,
+    "delayAfterLaunchMs": 200000
   },
   "deepLinks": {
     "scheme": "myapp",

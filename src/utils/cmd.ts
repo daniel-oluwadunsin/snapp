@@ -36,4 +36,25 @@ export const cmds = {
       android: `adb -s ${deviceId} shell monkey -p ${bundleId} -c android.intent.category.LAUNCHER 1`,
     };
   },
+
+  checkAppRunningInForeGround(bundleId: string, deviceId: string) {
+    return {
+      android: `adb -s ${deviceId} shell dumpsys window | grep mCurrentFocus`,
+      ios: `xcrun simctl spawn ${deviceId} launchctl list | grep ${bundleId}`,
+    };
+  },
+
+  checkAppRunning(bundleId: string, deviceId: string) {
+    return {
+      android: `adb -s ${deviceId} shell pidof ${bundleId}`,
+      ios: `xcrun simctl spawn ${deviceId} launchctl list | grep ${bundleId}`,
+    };
+  },
+
+  checkAppInstalled(bundleId: string, deviceId: string) {
+    return {
+      android: `adb -s ${deviceId} shell pm list packages | grep ${bundleId}`,
+      ios: `xcrun simctl get_app_container ${deviceId} ${bundleId}`,
+    };
+  },
 };
